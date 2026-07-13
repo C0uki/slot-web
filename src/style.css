@@ -21,6 +21,7 @@ body {
 }
 
 .cabinet {
+  position: relative;
   width: min(96vw, 520px);
   padding: 24px 24px 20px;
   text-align: center;
@@ -122,6 +123,145 @@ body {
   }
 }
 
+/* ---- 演出 ---- */
+
+/* リール停止時のフラッシュ */
+.reel.stopped {
+  animation: stop-flash 0.3s ease-out;
+}
+
+@keyframes stop-flash {
+  0% {
+    box-shadow: 0 0 18px 6px rgba(255, 255, 255, 0.85);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+/* リーチ（最後のリールが溜まっているとき） */
+.reel.anticipation {
+  animation: reach-pulse 0.4s ease-in-out infinite alternate;
+}
+
+@keyframes reach-pulse {
+  from {
+    box-shadow: 0 0 10px 3px rgba(255, 90, 60, 0.7);
+  }
+  to {
+    box-shadow: 0 0 22px 8px rgba(255, 40, 40, 1);
+  }
+}
+
+/* キャビネットのシェイク */
+.shake {
+  animation: cabinet-shake 0.5s ease-in-out;
+}
+
+@keyframes cabinet-shake {
+  10%, 50%, 90% {
+    transform: translate(-7px, 2px) rotate(-0.4deg);
+  }
+  30%, 70% {
+    transform: translate(7px, -2px) rotate(0.4deg);
+  }
+}
+
+/* 紙吹雪 */
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.confetti {
+  position: absolute;
+  top: -4vh;
+  width: 10px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.95;
+  animation: confetti-fall linear forwards;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translateY(110vh) translateX(calc(var(--drift) * 200px))
+      rotate(calc(var(--drift) * 900deg));
+    opacity: 0.6;
+  }
+}
+
+/* ビッグウィンのオーバーレイ */
+.bigwin {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  background: radial-gradient(circle, rgba(20, 8, 40, 0.55), rgba(10, 4, 24, 0.8));
+  pointer-events: none;
+  z-index: 50;
+  opacity: 1;
+  transition: opacity 0.5s;
+}
+
+.bigwin.out {
+  opacity: 0;
+}
+
+.bigwin-text {
+  font-size: clamp(3rem, 11vw, 6.5rem);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  -webkit-text-stroke: 2px #7a4c00;
+  text-shadow:
+    0 0 30px rgba(255, 200, 60, 0.9),
+    0 6px 0 #7a4c00;
+  animation: bigwin-pop 0.55s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.bigwin-amount {
+  font-size: clamp(1.6rem, 6vw, 3rem);
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(255, 220, 120, 0.9);
+  animation: bigwin-pop 0.55s 0.12s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+@keyframes bigwin-pop {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* サウンド切り替え */
+.sound-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  font-size: 1.15rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sound-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 /* ---- メッセージ / HUD ---- */
 
 .message {
@@ -130,6 +270,22 @@ body {
   font-size: 1rem;
   font-weight: 600;
   color: var(--gold);
+}
+
+.message.pop {
+  animation: message-pop 0.25s ease-out;
+}
+
+@keyframes message-pop {
+  0% {
+    transform: scale(0.85);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .hud {
