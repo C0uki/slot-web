@@ -25,22 +25,26 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <div class="cabinet">
     <h1 class="title">🎰 SLOT WEB</h1>
-    <div class="reels">
-      ${REEL_STRIPS.map((_, r) => `<div class="reel"><div class="strip" id="strip-${r}"></div></div>`).join('')}
-    </div>
-    <div class="message" id="message">SPIN でスタート！</div>
-    <div class="hud">
-      <div class="stat">💰 <b id="credits"></b></div>
-      <div class="stat bet-ctrl">
-        <button class="bet-btn" id="bet-down" aria-label="ベットを下げる">−</button>
-        <span>BET <b id="bet"></b></span>
-        <button class="bet-btn" id="bet-up" aria-label="ベットを上げる">＋</button>
+    <div class="game">
+      <div class="reels">
+        ${REEL_STRIPS.map((_, r) => `<div class="reel"><div class="strip" id="strip-${r}"></div></div>`).join('')}
       </div>
-      <div class="stat">WIN <b id="win">0</b></div>
+      <div class="message" id="message">SPIN でスタート！</div>
+      <div class="hud">
+        <div class="stat">💰 <b id="credits"></b></div>
+        <div class="stat bet-ctrl">
+          <button class="bet-btn" id="bet-down" aria-label="ベットを下げる">−</button>
+          <span>BET <b id="bet"></b></span>
+          <button class="bet-btn" id="bet-up" aria-label="ベットを上げる">＋</button>
+        </div>
+        <div class="stat">WIN <b id="win">0</b></div>
+      </div>
+      <button class="spin" id="spin">SPIN</button>
+      <button class="charge hidden" id="charge">💳 クレジットを追加</button>
     </div>
-    <button class="spin" id="spin">SPIN</button>
-    <button class="charge hidden" id="charge">💳 クレジットを追加</button>
-    <table class="paytable">
+    <details class="paytable-box">
+      <summary>📋 配当表を見る</summary>
+      <table class="paytable">
       <caption>配当表（横・斜めに3個以上並べばOK = BET × 倍率）</caption>
       <thead>
         <tr><th></th><th>×3</th><th>×4</th><th>×5</th></tr>
@@ -62,7 +66,8 @@ app.innerHTML = `
           )
           .join('')}
       </tbody>
-    </table>
+      </table>
+    </details>
   </div>
 `;
 
@@ -75,6 +80,15 @@ const spinBtn = document.querySelector<HTMLButtonElement>('#spin')!;
 const chargeBtn = document.querySelector<HTMLButtonElement>('#charge')!;
 const betDownBtn = document.querySelector<HTMLButtonElement>('#bet-down')!;
 const betUpBtn = document.querySelector<HTMLButtonElement>('#bet-up')!;
+const paytableBox = document.querySelector<HTMLDetailsElement>('.paytable-box')!;
+
+// PCでは配当表を常時表示、スマホでは折りたたみ
+const desktopMq = matchMedia('(min-width: 900px)');
+function syncPaytableOpen() {
+  paytableBox.open = desktopMq.matches;
+}
+syncPaytableOpen();
+desktopMq.addEventListener('change', syncPaytableOpen);
 
 // リールのセルを生成
 REEL_STRIPS.forEach((strip, r) => {
@@ -87,10 +101,10 @@ REEL_STRIPS.forEach((strip, r) => {
   stripEls[r].innerHTML = cells.join('');
 });
 
-// 1コマの高さ。CSS の --cell が唯一の定義元
+// 1コマの高さ。CSS の --cell が唯一の定義元（calc/min を含むため実測で取得）
 let cellPx = readCellPx();
 function readCellPx(): number {
-  return parseFloat(getComputedStyle(stripEls[0]).getPropertyValue('--cell')) || 100;
+  return stripEls[0].children[0]?.getBoundingClientRect().height || 100;
 }
 
 // 各リールの現在の停止セル（DOM 上の絶対 index。窓の最上段に見えるセル）
@@ -212,6 +226,12 @@ function spin() {
 
   const stops = spinStops();
   Promise.all(stops.map((stop, r) => spinReel(r, stop))).then(() => {
+    // 回転中に画面サイズが変わっていた場合に備えて位置を合わせ直す
+    const measured = readCellPx();
+    if (measured !== cellPx) {
+      cellPx = measured;
+      pos.forEach((p, r) => setTransform(r, p));
+    }
     const grid = gridFromStops(stops);
     const wins = evaluateWins(grid, bet);
     const scatters = evaluateScatters(grid, bet);
