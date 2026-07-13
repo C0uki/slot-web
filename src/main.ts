@@ -3,9 +3,13 @@ import {
   REEL_STRIPS,
   PAYLINES,
   SYMBOLS,
+  SCATTERS,
   type LineWin,
+  type ScatterWin,
+  type SymbolId,
   spinStops,
   evaluateWins,
+  evaluateScatters,
   gridFromStops,
 } from './game';
 
@@ -47,6 +51,15 @@ app.innerHTML = `
           .map(
             (s) =>
               `<tr><td>${s.char}</td>${s.payouts.map((p) => `<td>×${p}</td>`).join('')}</tr>`,
+          )
+          .join('')}
+        <tr class="pt-sub"><td colspan="4">✨ スキャッター（画面のどこでもOK）</td></tr>
+        ${(Object.entries(SCATTERS) as [SymbolId, { count: number; payout: number }[]][])
+          .map(
+            ([id, tiers]) =>
+              `<tr><td>${SYMBOLS[id].char}</td>${tiers
+                .map((t) => `<td>${t.count}個 ×${t.payout}</td>`)
+                .join('')}${'<td></td>'.repeat(3 - tiers.length)}</tr>`,
           )
           .join('')}
       </tbody>
@@ -133,7 +146,21 @@ function render() {
 }
 
 function clearWinHighlights() {
-  document.querySelectorAll('.cell.win').forEach((c) => c.classList.remove('win'));
+  document
+    .querySelectorAll('.cell.win, .cell.win-scatter')
+    .forEach((c) => c.classList.remove('win', 'win-scatter'));
+}
+
+function highlightScatters(scatters: ScatterWin[], grid: SymbolId[][]) {
+  for (const w of scatters) {
+    grid.forEach((column, reel) => {
+      column.forEach((symbol, row) => {
+        if (symbol === w.symbol) {
+          stripEls[reel].children[pos[reel] + row]?.classList.add('win-scatter');
+        }
+      });
+    });
+  }
 }
 
 function highlightWins(wins: LineWin[]) {
@@ -188,13 +215,22 @@ function spin() {
 
   const stops = spinStops();
   Promise.all(stops.map((stop, r) => spinReel(r, stop))).then(() => {
-    const wins = evaluateWins(gridFromStops(stops), bet);
-    const total = wins.reduce((sum, w) => sum + w.payout, 0);
+    const grid = gridFromStops(stops);
+    const wins = evaluateWins(grid, bet);
+    const scatters = evaluateScatters(grid, bet);
+    const total =
+      wins.reduce((sum, w) => sum + w.payout, 0) +
+      scatters.reduce((sum, w) => sum + w.payout, 0);
     if (total > 0) {
       credits += total;
       winEl.textContent = String(total);
-      setMessage(`🎉 WIN! +${total}　${wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`).join(' ')}`);
+      const parts = [
+        ...wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`),
+        ...scatters.map((w) => `✨${SYMBOLS[w.symbol].char}×${w.count}`),
+      ];
+      setMessage(`🎉 WIN! +${total}　${parts.join(' ')}`);
       highlightWins(wins);
+      highlightScatters(scatters, grid);
     } else {
       setMessage('😢 ハズレ… もう一回！');
     }

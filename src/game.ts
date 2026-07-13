@@ -51,6 +51,52 @@ export const PAYLINES: readonly (readonly number[])[] = [
   [4, 3, 2, 1, 0], // 斜め ↗
 ];
 
+/**
+ * スキャッター配当: ラインに揃わなくても、画面(5×5)のどこでも
+ * 対象の絵柄が count 個以上あれば BET × payout を払い出す。
+ * 条件を満たす中で最も高い段が適用される。
+ */
+export const SCATTERS: Partial<Record<SymbolId, readonly { count: number; payout: number }[]>> = {
+  seven: [
+    { count: 3, payout: 1 },
+    { count: 4, payout: 5 },
+    { count: 5, payout: 30 },
+  ],
+  cherry: [
+    { count: 8, payout: 1 },
+    { count: 10, payout: 5 },
+  ],
+};
+
+export interface ScatterWin {
+  symbol: SymbolId;
+  count: number;
+  payout: number;
+}
+
+/** 画面全体の絵柄数を数えてスキャッター配当を判定する */
+export function evaluateScatters(
+  grid: readonly (readonly SymbolId[])[],
+  bet: number,
+): ScatterWin[] {
+  const counts: Partial<Record<SymbolId, number>> = {};
+  for (const column of grid) {
+    for (const s of column) counts[s] = (counts[s] ?? 0) + 1;
+  }
+  const wins: ScatterWin[] = [];
+  for (const [symbol, tiers] of Object.entries(SCATTERS) as [
+    SymbolId,
+    readonly { count: number; payout: number }[],
+  ][]) {
+    const count = counts[symbol] ?? 0;
+    const tier = tiers.filter((t) => count >= t.count).at(-1);
+    if (tier) {
+      wins.push({ symbol, count, payout: tier.payout * bet });
+    }
+  }
+  return wins;
+}
+
 export interface LineWin {
   line: number;
   symbol: SymbolId;
