@@ -1,5 +1,5 @@
 :root {
-  --cell: 100px;
+  --cell: 72px;
   --gold: #f5c542;
   --gold-dim: rgba(245, 197, 66, 0.35);
 }
@@ -21,7 +21,7 @@ body {
 }
 
 .cabinet {
-  width: min(94vw, 480px);
+  width: min(96vw, 520px);
   padding: 24px 24px 20px;
   text-align: center;
   background: linear-gradient(180deg, #2b1a4d, #1c1038);
@@ -55,7 +55,7 @@ body {
 .reel {
   position: relative;
   width: var(--cell);
-  height: calc(var(--cell) * 3);
+  height: calc(var(--cell) * 5);
   overflow: hidden;
   border-radius: 8px;
   background: linear-gradient(180deg, #f2edff, #cfc4ee);
@@ -220,6 +220,14 @@ body {
   font-size: 0.85rem;
 }
 
+.paytable th {
+  padding: 3px 14px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: right;
+}
+
 .paytable caption {
   margin-bottom: 6px;
   font-size: 0.78rem;
@@ -231,19 +239,24 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.paytable td:last-child {
+.paytable td + td {
   text-align: right;
   color: #ffe9a8;
   font-weight: 700;
 }
 
-@media (max-width: 430px) {
+@media (max-width: 480px) {
   :root {
-    --cell: 76px;
+    --cell: 52px;
   }
 
   .cabinet {
-    padding: 18px 14px 16px;
+    padding: 16px 10px 14px;
+  }
+
+  .reels {
+    gap: 6px;
+    padding: 8px;
   }
 
   .title {
