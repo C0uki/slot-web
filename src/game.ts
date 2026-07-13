@@ -10,13 +10,13 @@ export interface SymbolDef {
 }
 
 export const SYMBOLS = {
-  seven: { char: '7️⃣', payouts: [20, 100, 500] },
-  diamond: { char: '💎', payouts: [10, 50, 200] },
-  bell: { char: '🔔', payouts: [8, 25, 100] },
-  grape: { char: '🍇', payouts: [5, 15, 60] },
-  orange: { char: '🍊', payouts: [4, 10, 40] },
-  lemon: { char: '🍋', payouts: [2, 8, 20] },
-  cherry: { char: '🍒', payouts: [1, 5, 10] },
+  seven: { char: '7️⃣', payouts: [10, 50, 250] },
+  diamond: { char: '💎', payouts: [3, 15, 100] },
+  bell: { char: '🔔', payouts: [2, 8, 50] },
+  grape: { char: '🍇', payouts: [1, 5, 25] },
+  orange: { char: '🍊', payouts: [1, 4, 15] },
+  lemon: { char: '🍋', payouts: [1, 2, 8] },
+  cherry: { char: '🍒', payouts: [1, 2, 5] },
 } as const satisfies Record<string, SymbolDef>;
 
 export type SymbolId = keyof typeof SYMBOLS;
@@ -40,16 +40,41 @@ export const REEL_STRIPS: readonly (readonly SymbolId[])[] = [
 
 export const ROWS = 5;
 
-/** ペイライン。各リールで参照する行番号（0=最上段〜4=最下段）。横5本＋斜め2本 */
-export const PAYLINES: readonly (readonly number[])[] = [
-  [2, 2, 2, 2, 2], // 中段
-  [1, 1, 1, 1, 1],
-  [3, 3, 3, 3, 3],
-  [0, 0, 0, 0, 0], // 最上段
-  [4, 4, 4, 4, 4], // 最下段
-  [0, 1, 2, 3, 4], // 斜め ↘
-  [4, 3, 2, 1, 0], // 斜め ↗
-];
+/** 盤面上の位置 [リール, 行] */
+export type Cell = readonly [number, number];
+
+/**
+ * 当たり判定の対象ライン。横5本＋長さ3以上の斜め全部（↘5本・↗5本）。
+ * ライン上のどの位置でも3個以上並べば当たり。
+ */
+export const WIN_LINES: readonly (readonly Cell[])[] = buildWinLines();
+
+function buildWinLines(): (readonly Cell[])[] {
+  const n = ROWS;
+  const lines: Cell[][] = [];
+  // 横
+  for (let row = 0; row < n; row++) {
+    lines.push(REEL_STRIPS.map((_, reel) => [reel, row] as const));
+  }
+  // 斜め ↘（row - reel が一定）と ↗（row + reel が一定）
+  for (let d = -(n - 3); d <= n - 3; d++) {
+    const down: Cell[] = [];
+    for (let reel = 0; reel < n; reel++) {
+      const row = reel + d;
+      if (row >= 0 && row < n) down.push([reel, row]);
+    }
+    lines.push(down);
+  }
+  for (let s = 2; s <= 2 * (n - 1) - 2; s++) {
+    const up: Cell[] = [];
+    for (let reel = 0; reel < n; reel++) {
+      const row = s - reel;
+      if (row >= 0 && row < n) up.push([reel, row]);
+    }
+    lines.push(up);
+  }
+  return lines;
+}
 
 /**
  * スキャッター配当: ラインに揃わなくても、画面(5×5)のどこでも
@@ -98,9 +123,10 @@ export function evaluateScatters(
 }
 
 export interface LineWin {
-  line: number;
+  /** 揃ったマスの位置 */
+  cells: readonly Cell[];
   symbol: SymbolId;
-  /** 左から連続した個数（3〜5） */
+  /** 連続した個数（3〜5） */
   count: number;
   payout: number;
 }
@@ -118,18 +144,30 @@ export function gridFromStops(stops: readonly number[]): SymbolId[][] {
 }
 
 /**
- * 全ペイラインを判定する。
- * 左端(リール0)から同じ絵柄が3個以上連続していれば当たり。
+ * 全ラインを判定する。
+ * ライン上のどの位置でも同じ絵柄が3個以上連続していれば当たり
+ * （1本のラインに複数の連続があればそれぞれ当たり）。
  */
 export function evaluateWins(grid: readonly (readonly SymbolId[])[], bet: number): LineWin[] {
   const wins: LineWin[] = [];
-  PAYLINES.forEach((line, i) => {
-    const first = grid[0][line[0]];
-    let count = 1;
-    while (count < line.length && grid[count][line[count]] === first) count++;
-    if (count >= 3) {
-      wins.push({ line: i, symbol: first, count, payout: SYMBOLS[first].payouts[count - 3] * bet });
+  for (const line of WIN_LINES) {
+    let i = 0;
+    while (i < line.length) {
+      const [reel, row] = line[i];
+      const symbol = grid[reel][row];
+      let end = i + 1;
+      while (end < line.length && grid[line[end][0]][line[end][1]] === symbol) end++;
+      const count = end - i;
+      if (count >= 3) {
+        wins.push({
+          cells: line.slice(i, end),
+          symbol,
+          count,
+          payout: SYMBOLS[symbol].payouts[count - 3] * bet,
+        });
+      }
+      i = end;
     }
-  });
+  }
   return wins;
 }

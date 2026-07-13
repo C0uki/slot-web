@@ -1,7 +1,6 @@
 import './style.css';
 import {
   REEL_STRIPS,
-  PAYLINES,
   SYMBOLS,
   SCATTERS,
   type LineWin,
@@ -42,7 +41,7 @@ app.innerHTML = `
     <button class="spin" id="spin">SPIN</button>
     <button class="charge hidden" id="charge">💳 クレジットを追加</button>
     <table class="paytable">
-      <caption>配当表（左から連続 = BET × 倍率）</caption>
+      <caption>配当表（横・斜めに3個以上並べばOK = BET × 倍率）</caption>
       <thead>
         <tr><th></th><th>×3</th><th>×4</th><th>×5</th></tr>
       </thead>
@@ -165,11 +164,9 @@ function highlightScatters(scatters: ScatterWin[], grid: SymbolId[][]) {
 
 function highlightWins(wins: LineWin[]) {
   for (const w of wins) {
-    PAYLINES[w.line].forEach((row, reel) => {
-      if (reel >= w.count) return; // 揃った左側のリールだけ光らせる
-      const cell = stripEls[reel].children[pos[reel] + row];
-      cell?.classList.add('win');
-    });
+    for (const [reel, row] of w.cells) {
+      stripEls[reel].children[pos[reel] + row]?.classList.add('win');
+    }
   }
 }
 
