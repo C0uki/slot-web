@@ -13,13 +13,33 @@ import {
 } from './game';
 
 const STRIP_REPEAT = 10; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
-const BETS = [10, 20, 50, 100];
+const MIN_BET = 10;
 const START_CREDITS = 1000;
 const STORAGE_KEY = 'slot-web:credits';
 
 let credits = loadCredits();
-let betIndex = 0;
+let bet = MIN_BET;
 let spinning = false;
+
+/**
+ * ベットを 1-2-5 刻みで上下させる（10, 20, 50, 100, 200, 500, …）。
+ * 上限なし。下限は MIN_BET。
+ */
+function stepBet(value: number, dir: 1 | -1): number {
+  const seq = [1, 2, 5];
+  const exp = Math.floor(Math.log10(value));
+  const mantissa = Math.round(value / 10 ** exp);
+  let i = seq.indexOf(mantissa) + dir;
+  let e = exp;
+  if (i < 0) {
+    i = seq.length - 1;
+    e--;
+  } else if (i >= seq.length) {
+    i = 0;
+    e++;
+  }
+  return Math.max(MIN_BET, seq[i] * 10 ** e);
+}
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
@@ -146,15 +166,17 @@ function saveCredits() {
 }
 
 function render() {
-  creditsEl.textContent = String(credits);
-  betEl.textContent = String(BETS[betIndex]);
-  spinBtn.disabled = spinning || credits < BETS[betIndex];
-  betDownBtn.disabled = spinning || betIndex === 0;
-  betUpBtn.disabled = spinning || betIndex === BETS.length - 1;
-  const broke = credits < Math.min(...BETS);
+  creditsEl.textContent = credits.toLocaleString('ja-JP');
+  betEl.textContent = bet.toLocaleString('ja-JP');
+  spinBtn.disabled = spinning || credits < bet;
+  betDownBtn.disabled = spinning || bet <= MIN_BET;
+  betUpBtn.disabled = spinning;
+  const broke = credits < MIN_BET;
   chargeBtn.classList.toggle('hidden', spinning || !broke);
   if (!spinning && broke) {
     setMessage('💸 クレジットがありません。チャージしてください');
+  } else if (!spinning && credits < bet) {
+    setMessage(`💦 BET ${bet.toLocaleString('ja-JP')} にはクレジットが足りません`);
   }
 }
 
@@ -211,7 +233,6 @@ function spinReel(r: number, stop: number): Promise<void> {
 
 function spin() {
   if (spinning) return;
-  const bet = BETS[betIndex];
   if (credits < bet) {
     render();
     return;
@@ -240,12 +261,12 @@ function spin() {
       scatters.reduce((sum, w) => sum + w.payout, 0);
     if (total > 0) {
       credits += total;
-      winEl.textContent = String(total);
+      winEl.textContent = total.toLocaleString('ja-JP');
       const parts = [
         ...wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`),
         ...scatters.map((w) => `✨${SYMBOLS[w.symbol].char}×${w.count}`),
       ];
-      setMessage(`🎉 WIN! +${total}　${parts.join(' ')}`);
+      setMessage(`🎉 WIN! +${total.toLocaleString('ja-JP')}　${parts.join(' ')}`);
       highlightWins(wins);
       highlightScatters(scatters, grid);
     } else {
@@ -264,14 +285,36 @@ chargeBtn.addEventListener('click', () => {
   setMessage(`💳 ${START_CREDITS} クレジットをチャージしました！`);
   render();
 });
-betDownBtn.addEventListener('click', () => {
-  betIndex = Math.max(0, betIndex - 1);
+function changeBet(dir: 1 | -1) {
+  if (spinning) return;
+  bet = stepBet(bet, dir);
   render();
-});
-betUpBtn.addEventListener('click', () => {
-  betIndex = Math.min(BETS.length - 1, betIndex + 1);
-  render();
-});
+}
+
+/** ボタン長押しで連続してベットを変更できるようにする */
+function addHoldRepeat(btn: HTMLButtonElement, fn: () => void) {
+  let delayTimer: number | undefined;
+  let repeatTimer: number | undefined;
+  const stop = () => {
+    clearTimeout(delayTimer);
+    clearInterval(repeatTimer);
+  };
+  btn.addEventListener('pointerdown', () => {
+    delayTimer = window.setTimeout(() => {
+      repeatTimer = window.setInterval(() => {
+        if (!btn.disabled) fn();
+      }, 110);
+    }, 400);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel'] as const) {
+    btn.addEventListener(ev, stop);
+  }
+}
+
+betDownBtn.addEventListener('click', () => changeBet(-1));
+betUpBtn.addEventListener('click', () => changeBet(1));
+addHoldRepeat(betDownBtn, () => changeBet(-1));
+addHoldRepeat(betUpBtn, () => changeBet(1));
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
