@@ -231,8 +231,34 @@ body {
 
 /* ---- 配当表 ---- */
 
+.paytable-box {
+  margin-top: 16px;
+}
+
+.paytable-box summary {
+  display: inline-block;
+  padding: 9px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.paytable-box summary::-webkit-details-marker {
+  display: none;
+}
+
+.paytable-box summary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .paytable {
-  margin: 18px auto 0;
+  margin: 12px auto 0;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
@@ -271,13 +297,20 @@ body {
   font-weight: 700;
 }
 
+/* ---- スマホ ---- */
+
 @media (max-width: 480px) {
   :root {
-    --cell: 52px;
+    /* 画面幅いっぱいにリールを広げる（枠・余白ぶんを引いて5等分） */
+    --cell: min(calc((96vw - 72px) / 5), 64px);
+  }
+
+  body {
+    padding: 12px 0;
   }
 
   .cabinet {
-    padding: 16px 10px 14px;
+    padding: 16px 10px 16px;
   }
 
   .reels {
@@ -286,6 +319,76 @@ body {
   }
 
   .title {
+    font-size: 1.35rem;
+    margin-bottom: 12px;
+  }
+
+  .message {
+    font-size: 0.95rem;
+  }
+
+  .stat {
+    padding: 7px 14px;
+    font-size: 0.95rem;
+  }
+
+  /* タップしやすい大きさに */
+  .bet-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 1.15rem;
+  }
+
+  .spin {
+    padding: 17px;
     font-size: 1.4rem;
+    border-radius: 16px;
+  }
+
+  .charge {
+    padding: 13px 22px;
+    font-size: 1.05rem;
+  }
+}
+
+/* ---- PC（横幅を活かした2カラム） ---- */
+
+@media (min-width: 900px) {
+  :root {
+    --cell: 84px;
+  }
+
+  .cabinet {
+    width: auto;
+    max-width: 96vw;
+    display: grid;
+    grid-template-columns: auto 270px;
+    column-gap: 30px;
+    align-items: start;
+  }
+
+  .title {
+    grid-column: 1 / -1;
+    font-size: 1.9rem;
+    margin-bottom: 20px;
+  }
+
+  .paytable-box {
+    margin-top: 4px;
+    padding: 14px 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    align-self: stretch;
+  }
+
+  .paytable-box summary {
+    display: none;
+  }
+
+  .paytable {
+    width: 100%;
+    margin: 0;
+    font-size: 0.9rem;
   }
 }
