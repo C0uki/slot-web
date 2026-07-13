@@ -9,7 +9,7 @@ import {
   gridFromStops,
 } from './game';
 
-const STRIP_REPEAT = 7; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
+const STRIP_REPEAT = 10; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
 const BETS = [10, 20, 50, 100];
 const START_CREDITS = 1000;
 const STORAGE_KEY = 'slot-web:credits';
@@ -38,10 +38,16 @@ app.innerHTML = `
     <button class="spin" id="spin">SPIN</button>
     <button class="charge hidden" id="charge">💳 クレジットを追加</button>
     <table class="paytable">
-      <caption>配当表（3つ揃い = BET × 倍率）</caption>
+      <caption>配当表（左から連続 = BET × 倍率）</caption>
+      <thead>
+        <tr><th></th><th>×3</th><th>×4</th><th>×5</th></tr>
+      </thead>
       <tbody>
         ${Object.values(SYMBOLS)
-          .map((s) => `<tr><td>${s.char}${s.char}${s.char}</td><td>×${s.payout}</td></tr>`)
+          .map(
+            (s) =>
+              `<tr><td>${s.char}</td>${s.payouts.map((p) => `<td>×${p}</td>`).join('')}</tr>`,
+          )
           .join('')}
       </tbody>
     </table>
@@ -133,6 +139,7 @@ function clearWinHighlights() {
 function highlightWins(wins: LineWin[]) {
   for (const w of wins) {
     PAYLINES[w.line].forEach((row, reel) => {
+      if (reel >= w.count) return; // 揃った左側のリールだけ光らせる
       const cell = stripEls[reel].children[pos[reel] + row];
       cell?.classList.add('win');
     });
@@ -148,7 +155,7 @@ function spinReel(r: number, stop: number): Promise<void> {
   el.style.transition = 'none';
   setTransform(r, cur);
   void el.offsetHeight; // reflow でスナップを確定させてからアニメーション開始
-  el.style.transition = `transform ${1.4 + r * 0.5}s cubic-bezier(0.12, 0.8, 0.25, 1.06)`;
+  el.style.transition = `transform ${1.2 + r * 0.35}s cubic-bezier(0.12, 0.8, 0.25, 1.06)`;
   setTransform(r, target);
   return new Promise((resolve) => {
     el.addEventListener(
@@ -186,7 +193,7 @@ function spin() {
     if (total > 0) {
       credits += total;
       winEl.textContent = String(total);
-      setMessage(`🎉 WIN! +${total}　${wins.map((w) => SYMBOLS[w.symbol].char.repeat(3)).join(' ')}`);
+      setMessage(`🎉 WIN! +${total}　${wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`).join(' ')}`);
       highlightWins(wins);
     } else {
       setMessage('😢 ハズレ… もう一回！');

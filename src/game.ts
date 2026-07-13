@@ -5,18 +5,18 @@
 export interface SymbolDef {
   /** 表示文字 */
   char: string;
-  /** 3つ揃ったときの配当倍率（BET × 倍率） */
-  payout: number;
+  /** 左から 3 / 4 / 5 個連続したときの配当倍率（BET × 倍率） */
+  payouts: readonly [number, number, number];
 }
 
 export const SYMBOLS = {
-  seven: { char: '7️⃣', payout: 50 },
-  diamond: { char: '💎', payout: 25 },
-  bell: { char: '🔔', payout: 15 },
-  grape: { char: '🍇', payout: 10 },
-  orange: { char: '🍊', payout: 8 },
-  lemon: { char: '🍋', payout: 5 },
-  cherry: { char: '🍒', payout: 3 },
+  seven: { char: '7️⃣', payouts: [20, 100, 500] },
+  diamond: { char: '💎', payouts: [10, 50, 200] },
+  bell: { char: '🔔', payouts: [8, 25, 100] },
+  grape: { char: '🍇', payouts: [5, 15, 60] },
+  orange: { char: '🍊', payouts: [4, 10, 40] },
+  lemon: { char: '🍋', payouts: [2, 8, 20] },
+  cherry: { char: '🍒', payouts: [1, 5, 10] },
 } as const satisfies Record<string, SymbolDef>;
 
 export type SymbolId = keyof typeof SYMBOLS;
@@ -32,22 +32,30 @@ export const REEL_STRIPS: readonly (readonly SymbolId[])[] = [
    'orange', 'lemon', 'cherry', 'grape', 'bell', 'orange', 'cherry', 'diamond', 'lemon', 'grape'],
   ['grape', 'cherry', 'lemon', 'diamond', 'orange', 'cherry', 'lemon', 'bell', 'grape', 'cherry',
    'seven', 'lemon', 'orange', 'cherry', 'diamond', 'grape', 'lemon', 'cherry', 'bell', 'orange'],
+  ['orange', 'lemon', 'cherry', 'diamond', 'grape', 'cherry', 'lemon', 'seven', 'orange', 'cherry',
+   'bell', 'lemon', 'grape', 'cherry', 'orange', 'diamond', 'lemon', 'cherry', 'grape', 'bell'],
+  ['cherry', 'grape', 'lemon', 'bell', 'cherry', 'orange', 'diamond', 'lemon', 'cherry', 'grape',
+   'orange', 'seven', 'cherry', 'lemon', 'bell', 'orange', 'cherry', 'diamond', 'grape', 'lemon'],
 ];
 
-export const ROWS = 3;
+export const ROWS = 5;
 
-/** ペイライン。各リールで参照する行番号（0=上段, 1=中段, 2=下段） */
-export const PAYLINES: readonly (readonly [number, number, number])[] = [
-  [1, 1, 1], // 中段
-  [0, 0, 0], // 上段
-  [2, 2, 2], // 下段
-  [0, 1, 2], // 斜め ↘
-  [2, 1, 0], // 斜め ↗
+/** ペイライン。各リールで参照する行番号（0=最上段〜4=最下段）。横5本＋斜め2本 */
+export const PAYLINES: readonly (readonly number[])[] = [
+  [2, 2, 2, 2, 2], // 中段
+  [1, 1, 1, 1, 1],
+  [3, 3, 3, 3, 3],
+  [0, 0, 0, 0, 0], // 最上段
+  [4, 4, 4, 4, 4], // 最下段
+  [0, 1, 2, 3, 4], // 斜め ↘
+  [4, 3, 2, 1, 0], // 斜め ↗
 ];
 
 export interface LineWin {
   line: number;
   symbol: SymbolId;
+  /** 左から連続した個数（3〜5） */
+  count: number;
   payout: number;
 }
 
@@ -63,13 +71,18 @@ export function gridFromStops(stops: readonly number[]): SymbolId[][] {
   );
 }
 
-/** 全ペイラインを判定して当たりラインを返す */
+/**
+ * 全ペイラインを判定する。
+ * 左端(リール0)から同じ絵柄が3個以上連続していれば当たり。
+ */
 export function evaluateWins(grid: readonly (readonly SymbolId[])[], bet: number): LineWin[] {
   const wins: LineWin[] = [];
   PAYLINES.forEach((line, i) => {
-    const [a, b, c] = line.map((row, reel) => grid[reel][row]);
-    if (a === b && b === c) {
-      wins.push({ line: i, symbol: a, payout: SYMBOLS[a].payout * bet });
+    const first = grid[0][line[0]];
+    let count = 1;
+    while (count < line.length && grid[count][line[count]] === first) count++;
+    if (count >= 3) {
+      wins.push({ line: i, symbol: first, count, payout: SYMBOLS[first].payouts[count - 3] * bet });
     }
   });
   return wins;
