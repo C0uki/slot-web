@@ -11,8 +11,13 @@ import {
   evaluateScatters,
   gridFromStops,
 } from './game';
+import { confetti, countUp, shake } from './fx';
+import { sound } from './sound';
 
-const STRIP_REPEAT = 10; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
+const BIG_WIN_MULT = 15; // BET の何倍で BIG WIN 演出にするか
+const MEGA_WIN_MULT = 50;
+
+const STRIP_REPEAT = 11; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
 const MIN_BET = 10;
 const START_CREDITS = 1000;
 const STORAGE_KEY = 'slot-web:credits';
@@ -44,6 +49,7 @@ function stepBet(value: number, dir: 1 | -1): number {
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <div class="cabinet">
+    <button class="sound-btn" id="sound" aria-label="サウンド切り替え"></button>
     <h1 class="title">🎰 SLOT WEB</h1>
     <div class="game">
       <div class="reels">
@@ -89,6 +95,11 @@ app.innerHTML = `
       </table>
     </details>
   </div>
+  <div class="confetti-layer" id="confetti"></div>
+  <div class="bigwin hidden" id="bigwin">
+    <div class="bigwin-text" id="bigwin-text">BIG WIN!</div>
+    <div class="bigwin-amount" id="bigwin-amount"></div>
+  </div>
 `;
 
 const stripEls = REEL_STRIPS.map((_, r) => document.querySelector<HTMLElement>(`#strip-${r}`)!);
@@ -101,6 +112,12 @@ const chargeBtn = document.querySelector<HTMLButtonElement>('#charge')!;
 const betDownBtn = document.querySelector<HTMLButtonElement>('#bet-down')!;
 const betUpBtn = document.querySelector<HTMLButtonElement>('#bet-up')!;
 const paytableBox = document.querySelector<HTMLDetailsElement>('.paytable-box')!;
+const cabinetEl = document.querySelector<HTMLElement>('.cabinet')!;
+const soundBtn = document.querySelector<HTMLButtonElement>('#sound')!;
+const confettiLayer = document.querySelector<HTMLElement>('#confetti')!;
+const bigwinEl = document.querySelector<HTMLElement>('#bigwin')!;
+const bigwinTextEl = document.querySelector<HTMLElement>('#bigwin-text')!;
+const bigwinAmountEl = document.querySelector<HTMLElement>('#bigwin-amount')!;
 
 // PCでは配当表を常時表示、スマホでは折りたたみ
 const desktopMq = matchMedia('(min-width: 900px)');
@@ -143,6 +160,21 @@ window.addEventListener('resize', () => {
 
 function setMessage(text: string) {
   messageEl.textContent = text;
+  messageEl.classList.remove('pop');
+  void messageEl.offsetWidth; // ポップアニメーションを再トリガー
+  messageEl.classList.add('pop');
+}
+
+function showBigWin(label: string, amount: number) {
+  bigwinTextEl.textContent = label;
+  bigwinEl.classList.remove('hidden', 'out');
+  countUp(bigwinAmountEl, amount, 1300);
+  setTimeout(() => bigwinEl.classList.add('out'), 2700);
+  setTimeout(() => bigwinEl.classList.add('hidden'), 3300);
+}
+
+function renderSoundBtn() {
+  soundBtn.textContent = sound.muted ? '🔇' : '🔊';
 }
 
 function loadCredits(): number {
@@ -206,16 +238,18 @@ function highlightWins(wins: LineWin[]) {
   }
 }
 
-function spinReel(r: number, stop: number): Promise<void> {
+function spinReel(r: number, stop: number, extraSec = 0): Promise<void> {
   const len = REEL_STRIPS[r].length;
   const el = stripEls[r];
+  const reelEl = el.parentElement!;
   const cur = pos[r] % len;
   const delta = (stop - cur + len) % len;
-  const target = cur + delta + len * (3 + r); // 数周まわしてから止める。後のリールほど長く回る
+  // 数周まわしてから止める。後のリールほど長く回り、リーチ時はさらに1周追加
+  const target = cur + delta + len * (3 + r + (extraSec > 0 ? 1 : 0));
   el.style.transition = 'none';
   setTransform(r, cur);
   void el.offsetHeight; // reflow でスナップを確定させてからアニメーション開始
-  el.style.transition = `transform ${1.2 + r * 0.35}s cubic-bezier(0.12, 0.8, 0.25, 1.06)`;
+  el.style.transition = `transform ${1.2 + r * 0.35 + extraSec}s cubic-bezier(0.12, 0.8, 0.25, 1.06)`;
   setTransform(r, target);
   return new Promise((resolve) => {
     el.addEventListener(
@@ -224,6 +258,9 @@ function spinReel(r: number, stop: number): Promise<void> {
         el.style.transition = 'none';
         pos[r] = target % len;
         setTransform(r, pos[r]);
+        sound.reelStop(r);
+        reelEl.classList.add('stopped');
+        setTimeout(() => reelEl.classList.remove('stopped'), 300);
         resolve();
       },
       { once: true },
@@ -243,17 +280,42 @@ function spin() {
   winEl.textContent = '0';
   clearWinHighlights();
   setMessage('🎲 回転中…');
+  sound.spin();
   render();
 
   const stops = spinStops();
-  Promise.all(stops.map((stop, r) => spinReel(r, stop))).then(() => {
+  const grid = gridFromStops(stops);
+
+  // リーチ演出: 最後のリール以外に 7️⃣ が2個以上見えるなら、最後のリールを溜める
+  const sevensBefore = grid
+    .slice(0, -1)
+    .flat()
+    .filter((s) => s === 'seven').length;
+  const anticipate = sevensBefore >= 2;
+  const lastReelEl = stripEls[stripEls.length - 1].parentElement!;
+  if (anticipate) {
+    setTimeout(
+      () => {
+        lastReelEl.classList.add('anticipation');
+        setMessage('🔥 リーチ…！');
+        sound.reach();
+      },
+      (1.2 + (stripEls.length - 2) * 0.35 + 0.1) * 1000,
+    );
+  }
+
+  Promise.all(
+    stops.map((stop, r) =>
+      spinReel(r, stop, anticipate && r === stripEls.length - 1 ? 1.4 : 0),
+    ),
+  ).then(() => {
+    lastReelEl.classList.remove('anticipation');
     // 回転中に画面サイズが変わっていた場合に備えて位置を合わせ直す
     const measured = readCellPx();
     if (measured !== cellPx) {
       cellPx = measured;
       pos.forEach((p, r) => setTransform(r, p));
     }
-    const grid = gridFromStops(stops);
     const wins = evaluateWins(grid, bet);
     const scatters = evaluateScatters(grid, bet);
     const total =
@@ -261,7 +323,7 @@ function spin() {
       scatters.reduce((sum, w) => sum + w.payout, 0);
     if (total > 0) {
       credits += total;
-      winEl.textContent = total.toLocaleString('ja-JP');
+      countUp(winEl, total, 800);
       const parts = [
         ...wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`),
         ...scatters.map((w) => `✨${SYMBOLS[w.symbol].char}×${w.count}`),
@@ -269,6 +331,22 @@ function spin() {
       setMessage(`🎉 WIN! +${total.toLocaleString('ja-JP')}　${parts.join(' ')}`);
       highlightWins(wins);
       highlightScatters(scatters, grid);
+      const mult = total / bet;
+      if (mult >= MEGA_WIN_MULT) {
+        showBigWin('MEGA WIN!!', total);
+        confetti(confettiLayer, 180);
+        shake(cabinetEl);
+        sound.bigWin();
+      } else if (mult >= BIG_WIN_MULT) {
+        showBigWin('BIG WIN!', total);
+        confetti(confettiLayer, 100);
+        shake(cabinetEl);
+        sound.bigWin();
+      } else if (scatters.length > 0) {
+        sound.scatter();
+      } else {
+        sound.win();
+      }
     } else {
       setMessage('😢 ハズレ… もう一回！');
     }
@@ -321,5 +399,17 @@ window.addEventListener('keydown', (e) => {
     spin();
   }
 });
+soundBtn.addEventListener('click', () => {
+  sound.toggle();
+  renderSoundBtn();
+});
 
 render();
+renderSoundBtn();
+
+// 演出プレビュー用の隠しモード（?demo=bigwin で開くとビッグウィン演出を再生）
+if (new URLSearchParams(location.search).get('demo') === 'bigwin') {
+  showBigWin('BIG WIN!', 12345);
+  confetti(confettiLayer, 120);
+  shake(cabinetEl);
+}
