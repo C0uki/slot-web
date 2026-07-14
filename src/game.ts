@@ -10,13 +10,13 @@ export interface SymbolDef {
 }
 
 export const SYMBOLS = {
-  seven: { char: '7️⃣', payouts: [10, 50, 250] },
-  diamond: { char: '💎', payouts: [3, 15, 100] },
-  bell: { char: '🔔', payouts: [2, 8, 50] },
-  grape: { char: '🍇', payouts: [1, 5, 25] },
-  orange: { char: '🍊', payouts: [1, 4, 15] },
-  lemon: { char: '🍋', payouts: [1, 2, 8] },
-  cherry: { char: '🍒', payouts: [1, 2, 5] },
+  seven: { char: '7️⃣', payouts: [20, 100, 500] },
+  diamond: { char: '💎', payouts: [6, 30, 200] },
+  bell: { char: '🔔', payouts: [4, 15, 100] },
+  grape: { char: '🍇', payouts: [2, 10, 50] },
+  orange: { char: '🍊', payouts: [2, 8, 30] },
+  lemon: { char: '🍋', payouts: [1, 4, 15] },
+  cherry: { char: '🍒', payouts: [1, 4, 10] },
 } as const satisfies Record<string, SymbolDef>;
 
 export type SymbolId = keyof typeof SYMBOLS;
@@ -38,40 +38,40 @@ export const REEL_STRIPS: readonly (readonly SymbolId[])[] = [
    'orange', 'seven', 'cherry', 'lemon', 'bell', 'orange', 'cherry', 'diamond', 'grape', 'lemon'],
 ];
 
-export const ROWS = 5;
+export const ROWS = 3;
 
 /** 盤面上の位置 [リール, 行] */
 export type Cell = readonly [number, number];
 
 /**
- * 当たり判定の対象ライン。横5本＋長さ3以上の斜め全部（↘5本・↗5本）。
- * ライン上のどの位置でも3個以上並べば当たり。
+ * 当たり判定の対象ライン。横（行数ぶん）＋長さ3以上の斜め全部（↘・↗）。
+ * ライン上のどの位置でも3個以上並べば当たり。リール数×行数が長方形でも動く。
  */
 export const WIN_LINES: readonly (readonly Cell[])[] = buildWinLines();
 
 function buildWinLines(): (readonly Cell[])[] {
-  const n = ROWS;
+  const reels = REEL_STRIPS.length;
   const lines: Cell[][] = [];
   // 横
-  for (let row = 0; row < n; row++) {
+  for (let row = 0; row < ROWS; row++) {
     lines.push(REEL_STRIPS.map((_, reel) => [reel, row] as const));
   }
-  // 斜め ↘（row - reel が一定）と ↗（row + reel が一定）
-  for (let d = -(n - 3); d <= n - 3; d++) {
+  // 斜め ↘（row - reel が一定）と ↗（row + reel が一定）。長さ3以上のものだけ
+  for (let d = -(reels - 1); d <= ROWS - 1; d++) {
     const down: Cell[] = [];
-    for (let reel = 0; reel < n; reel++) {
+    for (let reel = 0; reel < reels; reel++) {
       const row = reel + d;
-      if (row >= 0 && row < n) down.push([reel, row]);
+      if (row >= 0 && row < ROWS) down.push([reel, row]);
     }
-    lines.push(down);
+    if (down.length >= 3) lines.push(down);
   }
-  for (let s = 2; s <= 2 * (n - 1) - 2; s++) {
+  for (let s = 0; s <= reels + ROWS - 2; s++) {
     const up: Cell[] = [];
-    for (let reel = 0; reel < n; reel++) {
+    for (let reel = 0; reel < reels; reel++) {
       const row = s - reel;
-      if (row >= 0 && row < n) up.push([reel, row]);
+      if (row >= 0 && row < ROWS) up.push([reel, row]);
     }
-    lines.push(up);
+    if (up.length >= 3) lines.push(up);
   }
   return lines;
 }
@@ -115,13 +115,13 @@ export function findReachRuns(
  */
 export const SCATTERS: Partial<Record<SymbolId, readonly { count: number; payout: number }[]>> = {
   seven: [
-    { count: 3, payout: 1 },
-    { count: 4, payout: 5 },
-    { count: 5, payout: 30 },
+    { count: 2, payout: 1 },
+    { count: 3, payout: 5 },
+    { count: 4, payout: 30 },
   ],
   cherry: [
-    { count: 8, payout: 1 },
-    { count: 10, payout: 5 },
+    { count: 5, payout: 1 },
+    { count: 6, payout: 5 },
   ],
 };
 
@@ -147,7 +147,7 @@ export function evaluateScatters(
     readonly { count: number; payout: number }[],
   ][]) {
     const count = counts[symbol] ?? 0;
-    const tier = tiers.filter((t) => count >= Math.max(1, t.count + minDelta)).at(-1);
+    const tier = tiers.filter((t) => count >= Math.max(2, t.count + minDelta)).at(-1);
     if (tier) {
       wins.push({ symbol, count, payout: tier.payout * bet });
     }

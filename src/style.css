@@ -56,7 +56,7 @@ body {
 .reel {
   position: relative;
   width: var(--cell);
-  height: calc(var(--cell) * 5);
+  height: calc(var(--cell) * 3);
   overflow: hidden;
   border-radius: 8px;
   background: linear-gradient(180deg, #f2edff, #cfc4ee);
