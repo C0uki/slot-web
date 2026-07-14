@@ -63,7 +63,6 @@ app.innerHTML = `
           <span>BET <b id="bet"></b></span>
           <button class="bet-btn" id="bet-up" aria-label="ベットを上げる">＋</button>
         </div>
-        <div class="stat">WIN <b id="win">0</b></div>
       </div>
       <button class="spin" id="spin">SPIN</button>
       <button class="charge hidden" id="charge">💳 クレジットを追加</button>
@@ -105,7 +104,6 @@ app.innerHTML = `
 const stripEls = REEL_STRIPS.map((_, r) => document.querySelector<HTMLElement>(`#strip-${r}`)!);
 const creditsEl = document.querySelector<HTMLElement>('#credits')!;
 const betEl = document.querySelector<HTMLElement>('#bet')!;
-const winEl = document.querySelector<HTMLElement>('#win')!;
 const messageEl = document.querySelector<HTMLElement>('#message')!;
 const spinBtn = document.querySelector<HTMLButtonElement>('#spin')!;
 const chargeBtn = document.querySelector<HTMLButtonElement>('#charge')!;
@@ -277,7 +275,6 @@ function spin() {
   spinning = true;
   credits -= bet;
   saveCredits();
-  winEl.textContent = '0';
   clearWinHighlights();
   setMessage('🎲 回転中…');
   sound.spin();
@@ -323,7 +320,6 @@ function spin() {
       scatters.reduce((sum, w) => sum + w.payout, 0);
     if (total > 0) {
       credits += total;
-      countUp(winEl, total, 800);
       const parts = [
         ...wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`),
         ...scatters.map((w) => `✨${SYMBOLS[w.symbol].char}×${w.count}`),
