@@ -487,6 +487,137 @@ body {
   }
 }
 
+/* ---- 統計モーダル ---- */
+
+.stats-btn {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 40px;
+  height: 40px;
+  font-size: 1.05rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.stats-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.stats-card {
+  position: relative;
+  width: min(94vw, 700px);
+  max-height: 92vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.stats-card h2 {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  font-size: 0.95rem;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.stats-h {
+  margin: 14px 0 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.chart-wrap {
+  position: relative;
+  padding: 8px 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.chart-wrap canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.chart-tip {
+  position: absolute;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(15, 8, 35, 0.95);
+  border: 1px solid rgba(245, 197, 66, 0.6);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 22px;
+  align-items: start;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.stats-table td,
+.stats-table th {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-table td:last-child,
+.stats-table th:last-child,
+.stats-table td + td,
+.stats-table th + th {
+  text-align: right;
+  color: #ffe9a8;
+}
+
+.stats-table th {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.data-table-box {
+  margin-top: 14px;
+}
+
+.data-table-box summary {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* サウンド切り替え */
 .sound-btn {
   position: absolute;
