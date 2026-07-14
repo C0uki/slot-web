@@ -493,7 +493,10 @@ function spin() {
     return;
   }
   spinning = true;
-  credits -= bet;
+  // 賭けた額をここで確定させる。回転中に何かの拍子でBET表示が変わっても
+  // 配当は必ずこのスピンで賭けた額で計算する
+  const spinBet = bet;
+  credits -= spinBet;
   if (mode === 'rogue') run.spinsLeft--;
   persist();
   clearWinHighlights();
@@ -543,19 +546,22 @@ function spin() {
       cellPx = measured;
       pos.forEach((p, r) => setTransform(r, p));
     }
-    const wins = evaluateWins(grid, bet);
-    const scatters = evaluateScatters(grid, bet, activeMods().scatterMinDelta);
+    const wins = evaluateWins(grid, spinBet);
+    const scatters = evaluateScatters(grid, spinBet, activeMods().scatterMinDelta);
     const total = [...wins, ...scatters].reduce((sum, w) => sum + payoutWithMods(w), 0);
     if (total > 0) {
       credits += total;
+      // 当たりごとの金額も表示して、合計の内訳が分かるようにする
       const parts = [
-        ...wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count}`),
-        ...scatters.map((w) => `✨${SYMBOLS[w.symbol].char}×${w.count}`),
+        ...wins.map((w) => `${SYMBOLS[w.symbol].char}×${w.count} +${payoutWithMods(w).toLocaleString('ja-JP')}`),
+        ...scatters.map(
+          (w) => `✨${SYMBOLS[w.symbol].char}×${w.count} +${payoutWithMods(w).toLocaleString('ja-JP')}`,
+        ),
       ];
-      setMessage(`🎉 WIN! +${total.toLocaleString('ja-JP')}　${parts.join(' ')}`);
+      setMessage(`🎉 WIN! +${total.toLocaleString('ja-JP')}（BET ${spinBet.toLocaleString('ja-JP')}）　${parts.join('　')}`);
       highlightWins(wins);
       highlightScatters(scatters, grid);
-      const mult = total / bet;
+      const mult = total / spinBet;
       if (mult >= MEGA_WIN_MULT) {
         showBigWin('MEGA WIN!!', total);
         confetti(confettiLayer, 180);
@@ -572,13 +578,13 @@ function spin() {
         sound.win();
       }
     } else if (activeMods().lossRefund > 0) {
-      const refund = Math.floor(bet * activeMods().lossRefund);
+      const refund = Math.floor(spinBet * activeMods().lossRefund);
       credits += refund;
       setMessage(`😢 ハズレ… 🐷 +${refund.toLocaleString('ja-JP')} 返ってきた`);
     } else {
       setMessage('😢 ハズレ… もう一回！');
     }
-    recordSpin(stats, { bet, win: total, credits });
+    recordSpin(stats, { bet: spinBet, win: total, credits });
     spinning = false;
     persist();
     render();
