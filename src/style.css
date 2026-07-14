@@ -934,7 +934,14 @@ body {
   .title {
     grid-column: 1 / -1;
     font-size: 1.9rem;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+  }
+
+  /* モード切替は2カラムをまたいで中央に置く（ゲーム部が右列に落ちるのを防ぐ） */
+  .mode-toggle {
+    grid-column: 1 / -1;
+    justify-self: center;
+    margin-bottom: 18px;
   }
 
   .paytable-box {
