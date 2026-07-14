@@ -32,10 +32,14 @@ const MEGA_WIN_MULT = 50;
 
 const STRIP_REPEAT = 11; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
 const MIN_BET = 10;
-const START_CREDITS = 100;
+const START_CREDITS = 100; // ローグライクの開始クレジット
+const FREE_START_CREDITS = 1000; // フリープレイの開始クレジット
 const RUN_KEY = 'slot-web:run';
+const FREE_KEY = 'slot-web:credits';
+const MODE_KEY = 'slot-web:mode';
 
 type Phase = 'playing' | 'shop' | 'gameover';
+type Mode = 'rogue' | 'free';
 
 interface RunState {
   credits: number;
@@ -44,14 +48,56 @@ interface RunState {
   charms: string[];
 }
 
+let mode: Mode = loadMode();
 let run: RunState = loadRun() ?? newRunState();
-let credits = run.credits;
+let credits = mode === 'rogue' ? run.credits : loadFreeCredits();
 let mods: Mods = computeMods(run.charms);
 let phase: Phase = 'playing';
 let bet = MIN_BET;
 let spinning = false;
 let shopOffer: Charm[] = [];
 const stats = loadStats();
+
+const NEUTRAL_MODS: Mods = computeMods([]);
+
+/** 現在のモードで適用されるお守り効果（フリープレイではお守りなし） */
+function activeMods(): Mods {
+  return mode === 'rogue' ? mods : NEUTRAL_MODS;
+}
+
+function loadMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'free' ? 'free' : 'rogue';
+  } catch {
+    return 'rogue';
+  }
+}
+
+function loadFreeCredits(): number {
+  try {
+    const saved = Number(localStorage.getItem(FREE_KEY));
+    if (Number.isFinite(saved) && saved >= 0 && localStorage.getItem(FREE_KEY) !== null) {
+      return saved;
+    }
+  } catch {
+    /* 初期値にフォールバック */
+  }
+  return FREE_START_CREDITS;
+}
+
+function saveFreeCredits() {
+  try {
+    localStorage.setItem(FREE_KEY, String(credits));
+  } catch {
+    /* 保存できなくても続行 */
+  }
+}
+
+/** 現在のモードに応じて所持クレジットを保存する */
+function persist() {
+  if (mode === 'rogue') saveRun();
+  else saveFreeCredits();
+}
 
 function newRunState(): RunState {
   return { credits: START_CREDITS, round: 1, spinsLeft: 10, charms: [] };
@@ -119,13 +165,17 @@ app.innerHTML = `
     <button class="sound-btn" id="sound" aria-label="サウンド切り替え"></button>
     <button class="stats-btn" id="stats-open" aria-label="統計を見る">📊</button>
     <h1 class="title">🎰 SLOT WEB</h1>
+    <div class="mode-toggle" id="mode-toggle">
+      <button data-mode="rogue">⚔️ ローグライク</button>
+      <button data-mode="free">🎰 フリー</button>
+    </div>
     <div class="game">
-      <div class="runbar">
+      <div class="runbar" id="runbar">
         <div class="run-stat">ROUND <b id="round"></b></div>
         <div class="run-stat">💀 ノルマ <b id="norma"></b></div>
         <div class="run-stat">🎰 残り <b id="spins-left"></b>回</div>
       </div>
-      <div class="norma-progress"><div class="norma-fill" id="norma-fill"></div></div>
+      <div class="norma-progress" id="norma-progress"><div class="norma-fill" id="norma-fill"></div></div>
       <div class="charms" id="charms"></div>
       <div class="reels">
         ${REEL_STRIPS.map((_, r) => `<div class="reel"><div class="strip" id="strip-${r}"></div></div>`).join('')}
@@ -141,6 +191,7 @@ app.innerHTML = `
       </div>
       <button class="spin" id="spin">SPIN</button>
       <button class="pay hidden" id="pay">💀 ノルマを支払う</button>
+      <button class="charge hidden" id="charge">💳 クレジットを追加</button>
     </div>
     <details class="paytable-box">
       <summary>📋 配当表を見る</summary>
@@ -223,6 +274,10 @@ const betEl = document.querySelector<HTMLElement>('#bet')!;
 const messageEl = document.querySelector<HTMLElement>('#message')!;
 const spinBtn = document.querySelector<HTMLButtonElement>('#spin')!;
 const payBtn = document.querySelector<HTMLButtonElement>('#pay')!;
+const chargeBtn = document.querySelector<HTMLButtonElement>('#charge')!;
+const modeToggleEl = document.querySelector<HTMLElement>('#mode-toggle')!;
+const runbarEl = document.querySelector<HTMLElement>('#runbar')!;
+const normaProgressEl = document.querySelector<HTMLElement>('#norma-progress')!;
 const betDownBtn = document.querySelector<HTMLButtonElement>('#bet-down')!;
 const betUpBtn = document.querySelector<HTMLButtonElement>('#bet-up')!;
 const paytableBox = document.querySelector<HTMLDetailsElement>('.paytable-box')!;
@@ -314,27 +369,44 @@ function renderSoundBtn() {
 }
 
 function render() {
+  const rogue = mode === 'rogue';
   creditsEl.textContent = credits.toLocaleString('ja-JP');
   betEl.textContent = bet.toLocaleString('ja-JP');
-  roundEl.textContent = String(run.round);
-  normaEl.textContent = norma().toLocaleString('ja-JP');
-  spinsLeftEl.textContent = String(run.spinsLeft);
-  const ratio = Math.min(1, credits / norma());
-  normaFillEl.style.width = `${(ratio * 100).toFixed(1)}%`;
-  normaFillEl.classList.toggle('ok', credits >= norma());
-  charmsEl.innerHTML = run.charms
-    .map((id) => {
-      const c = CHARMS.find((x) => x.id === id);
-      return c ? `<span class="charm-chip" title="${c.name}: ${c.desc}">${c.char}</span>` : '';
-    })
-    .join('');
+
+  // モード切替の見た目とローグライク専用UIの表示
+  modeToggleEl.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+    b.disabled = spinning;
+  });
+  runbarEl.classList.toggle('hidden', !rogue);
+  normaProgressEl.classList.toggle('hidden', !rogue);
+  charmsEl.classList.toggle('hidden', !rogue);
+
+  if (rogue) {
+    roundEl.textContent = String(run.round);
+    normaEl.textContent = norma().toLocaleString('ja-JP');
+    spinsLeftEl.textContent = String(run.spinsLeft);
+    const ratio = Math.min(1, credits / norma());
+    normaFillEl.style.width = `${(ratio * 100).toFixed(1)}%`;
+    normaFillEl.classList.toggle('ok', credits >= norma());
+    charmsEl.innerHTML = run.charms
+      .map((id) => {
+        const c = CHARMS.find((x) => x.id === id);
+        return c ? `<span class="charm-chip" title="${c.name}: ${c.desc}">${c.char}</span>` : '';
+      })
+      .join('');
+  }
 
   const playing = phase === 'playing';
-  spinBtn.disabled = !playing || spinning || credits < bet || run.spinsLeft <= 0;
+  spinBtn.disabled =
+    !playing || spinning || credits < bet || (rogue && run.spinsLeft <= 0);
   betDownBtn.disabled = !playing || spinning || bet <= MIN_BET;
   betUpBtn.disabled = !playing || spinning;
-  payBtn.classList.toggle('hidden', !playing || spinning || credits < norma());
-  if (playing && !spinning && credits < bet && credits >= MIN_BET) {
+  payBtn.classList.toggle('hidden', !rogue || !playing || spinning || credits < norma());
+  chargeBtn.classList.toggle('hidden', rogue || spinning || credits >= MIN_BET);
+  if (!rogue && !spinning && credits < MIN_BET) {
+    setMessage('💸 クレジットがありません。チャージしてください');
+  } else if (playing && !spinning && credits < bet && credits >= MIN_BET) {
     setMessage(`💦 BET ${bet.toLocaleString('ja-JP')} にはクレジットが足りません`);
   }
 }
@@ -407,21 +479,23 @@ function spinReel(r: number, stop: number, extraSec = 0): Promise<void> {
   });
 }
 
-/** お守りの効果を反映した配当額 */
+/** お守りの効果を反映した配当額（フリープレイでは素の配当） */
 function payoutWithMods(w: LineWin | ScatterWin): number {
-  return Math.round(w.payout * (mods.symbolMult[w.symbol] ?? 1) * mods.globalMult);
+  const m = activeMods();
+  return Math.round(w.payout * (m.symbolMult[w.symbol] ?? 1) * m.globalMult);
 }
 
 function spin() {
-  if (spinning || phase !== 'playing' || run.spinsLeft <= 0) return;
+  if (spinning || phase !== 'playing') return;
+  if (mode === 'rogue' && run.spinsLeft <= 0) return;
   if (credits < bet) {
     render();
     return;
   }
   spinning = true;
   credits -= bet;
-  run.spinsLeft--;
-  saveRun();
+  if (mode === 'rogue') run.spinsLeft--;
+  persist();
   clearWinHighlights();
   setMessage('🎲 回転中…');
   sound.spin();
@@ -470,7 +544,7 @@ function spin() {
       pos.forEach((p, r) => setTransform(r, p));
     }
     const wins = evaluateWins(grid, bet);
-    const scatters = evaluateScatters(grid, bet, mods.scatterMinDelta);
+    const scatters = evaluateScatters(grid, bet, activeMods().scatterMinDelta);
     const total = [...wins, ...scatters].reduce((sum, w) => sum + payoutWithMods(w), 0);
     if (total > 0) {
       credits += total;
@@ -497,8 +571,8 @@ function spin() {
       } else {
         sound.win();
       }
-    } else if (mods.lossRefund > 0) {
-      const refund = Math.floor(bet * mods.lossRefund);
+    } else if (activeMods().lossRefund > 0) {
+      const refund = Math.floor(bet * activeMods().lossRefund);
       credits += refund;
       setMessage(`😢 ハズレ… 🐷 +${refund.toLocaleString('ja-JP')} 返ってきた`);
     } else {
@@ -506,15 +580,15 @@ function spin() {
     }
     recordSpin(stats, { bet, win: total, credits });
     spinning = false;
-    saveRun();
+    persist();
     render();
-    checkRoundEnd();
+    if (mode === 'rogue') checkRoundEnd();
   });
 }
 
-/** スピン後のラウンド判定（期限切れ・破産） */
+/** スピン後のラウンド判定（期限切れ・破産）。ローグライク専用 */
 function checkRoundEnd() {
-  if (phase !== 'playing') return;
+  if (mode !== 'rogue' || phase !== 'playing') return;
   if (run.spinsLeft <= 0) {
     if (credits >= norma()) {
       clearRound();
@@ -603,6 +677,45 @@ restartBtn.addEventListener('click', () => {
 payBtn.addEventListener('click', clearRound);
 spinBtn.addEventListener('click', spin);
 
+chargeBtn.addEventListener('click', () => {
+  if (mode !== 'free') return;
+  credits = FREE_START_CREDITS;
+  saveFreeCredits();
+  setMessage(`💳 ${FREE_START_CREDITS.toLocaleString('ja-JP')} クレジットをチャージしました！`);
+  render();
+});
+
+/** モードを切り替える。それぞれの進行状況は別々に保存され、行き来できる */
+function applyMode(next: Mode) {
+  if (mode === next || spinning || phase === 'shop') return;
+  persist();
+  mode = next;
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    /* 保存できなくても続行 */
+  }
+  gameoverEl.classList.add('hidden');
+  phase = 'playing';
+  if (mode === 'rogue') {
+    run = loadRun() ?? newRunState();
+    credits = run.credits;
+    mods = computeMods(run.charms);
+    setMessage(`⚔️ ラウンド ${run.round}！ 💀 ノルマ ${norma().toLocaleString('ja-JP')} を稼いで支払おう`);
+    render();
+    checkRoundEnd();
+  } else {
+    credits = loadFreeCredits();
+    setMessage('🎰 フリープレイ！ 好きなだけ回そう');
+    render();
+  }
+}
+
+modeToggleEl.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-mode]');
+  if (btn && !btn.disabled) applyMode(btn.dataset.mode as Mode);
+});
+
 function changeBet(dir: 1 | -1) {
   if (spinning || phase !== 'playing') return;
   bet = stepBet(bet, dir);
@@ -668,7 +781,7 @@ function openStats() {
   `;
 
   // 理論確率（現在のお守り込みでその場でシミュレーション）
-  const odds = simulateOdds(mods);
+  const odds = simulateOdds(activeMods());
   oddsTrialsEl.textContent = odds.trials.toLocaleString('ja-JP');
   oddsTableEl.innerHTML = `
     <tr><td>何かしら当たる</td><td>${pct(odds.anyHit)}</td></tr>
@@ -705,8 +818,12 @@ statsEl.addEventListener('click', (e) => {
 
 render();
 renderSoundBtn();
-setMessage(`⚔️ ラウンド ${run.round}！ 💀 ノルマ ${norma().toLocaleString('ja-JP')} を稼いで支払おう`);
-checkRoundEnd();
+if (mode === 'rogue') {
+  setMessage(`⚔️ ラウンド ${run.round}！ 💀 ノルマ ${norma().toLocaleString('ja-JP')} を稼いで支払おう`);
+  checkRoundEnd();
+} else {
+  setMessage('🎰 フリープレイ！ 好きなだけ回そう');
+}
 
 // 演出プレビュー用の隠しモード（?demo=bigwin で開くとビッグウィン演出を再生）
 if (new URLSearchParams(location.search).get('demo') === 'bigwin') {
