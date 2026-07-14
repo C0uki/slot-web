@@ -131,10 +131,11 @@ export interface ScatterWin {
   payout: number;
 }
 
-/** 画面全体の絵柄数を数えてスキャッター配当を判定する */
+/** 画面全体の絵柄数を数えてスキャッター配当を判定する。minDelta で必要個数を増減できる */
 export function evaluateScatters(
   grid: readonly (readonly SymbolId[])[],
   bet: number,
+  minDelta = 0,
 ): ScatterWin[] {
   const counts: Partial<Record<SymbolId, number>> = {};
   for (const column of grid) {
@@ -146,7 +147,7 @@ export function evaluateScatters(
     readonly { count: number; payout: number }[],
   ][]) {
     const count = counts[symbol] ?? 0;
-    const tier = tiers.filter((t) => count >= t.count).at(-1);
+    const tier = tiers.filter((t) => count >= Math.max(1, t.count + minDelta)).at(-1);
     if (tier) {
       wins.push({ symbol, count, payout: tier.payout * bet });
     }

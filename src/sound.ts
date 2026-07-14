@@ -83,6 +83,9 @@ export const sound = {
   scatter() {
     [880, 1175, 1568].forEach((f, i) => tone(f, i * 0.07, 0.12, 'sine', 0.14));
   },
+  gameOver() {
+    [392, 330, 262, 196].forEach((f, i) => tone(f, i * 0.22, 0.4, 'sawtooth', 0.12));
+  },
   bigWin() {
     [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) =>
       tone(f, i * 0.13, 0.24, 'triangle', 0.2),

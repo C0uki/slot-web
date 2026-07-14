@@ -13,6 +13,15 @@ import {
   gridFromStops,
   type Cell,
 } from './game';
+import {
+  CHARMS,
+  computeMods,
+  normaFor,
+  pickShopCharms,
+  spinsFor,
+  type Charm,
+  type Mods,
+} from './charms';
 import { confetti, countUp, shake } from './fx';
 import { sound } from './sound';
 
@@ -21,12 +30,65 @@ const MEGA_WIN_MULT = 50;
 
 const STRIP_REPEAT = 11; // 回転アニメーションの余白として DOM 上でストリップを繰り返す回数
 const MIN_BET = 10;
-const START_CREDITS = 1000;
-const STORAGE_KEY = 'slot-web:credits';
+const START_CREDITS = 100;
+const RUN_KEY = 'slot-web:run';
 
-let credits = loadCredits();
+type Phase = 'playing' | 'shop' | 'gameover';
+
+interface RunState {
+  credits: number;
+  round: number;
+  spinsLeft: number;
+  charms: string[];
+}
+
+let run: RunState = loadRun() ?? newRunState();
+let credits = run.credits;
+let mods: Mods = computeMods(run.charms);
+let phase: Phase = 'playing';
 let bet = MIN_BET;
 let spinning = false;
+let shopOffer: Charm[] = [];
+
+function newRunState(): RunState {
+  return { credits: START_CREDITS, round: 1, spinsLeft: 10, charms: [] };
+}
+
+function loadRun(): RunState | null {
+  try {
+    const raw = localStorage.getItem(RUN_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as RunState;
+    if (
+      Number.isFinite(data.credits) &&
+      Number.isFinite(data.round) &&
+      Number.isFinite(data.spinsLeft) &&
+      Array.isArray(data.charms) &&
+      data.round >= 1 &&
+      data.spinsLeft >= 0 &&
+      data.credits >= 0
+    ) {
+      return data;
+    }
+  } catch {
+    /* 壊れたセーブは無視して新規スタート */
+  }
+  return null;
+}
+
+function saveRun() {
+  try {
+    run.credits = credits;
+    localStorage.setItem(RUN_KEY, JSON.stringify(run));
+  } catch {
+    /* 保存できなくてもゲームは続行できる */
+  }
+}
+
+/** 現在のラウンドのノルマ */
+function norma(): number {
+  return normaFor(run.round);
+}
 
 /**
  * ベットを 1-2-5 刻みで上下させる（10, 20, 50, 100, 200, 500, …）。
@@ -54,6 +116,13 @@ app.innerHTML = `
     <button class="sound-btn" id="sound" aria-label="サウンド切り替え"></button>
     <h1 class="title">🎰 SLOT WEB</h1>
     <div class="game">
+      <div class="runbar">
+        <div class="run-stat">ROUND <b id="round"></b></div>
+        <div class="run-stat">💀 ノルマ <b id="norma"></b></div>
+        <div class="run-stat">🎰 残り <b id="spins-left"></b>回</div>
+      </div>
+      <div class="norma-progress"><div class="norma-fill" id="norma-fill"></div></div>
+      <div class="charms" id="charms"></div>
       <div class="reels">
         ${REEL_STRIPS.map((_, r) => `<div class="reel"><div class="strip" id="strip-${r}"></div></div>`).join('')}
       </div>
@@ -67,7 +136,7 @@ app.innerHTML = `
         </div>
       </div>
       <button class="spin" id="spin">SPIN</button>
-      <button class="charge hidden" id="charge">💳 クレジットを追加</button>
+      <button class="pay hidden" id="pay">💀 ノルマを支払う</button>
     </div>
     <details class="paytable-box">
       <summary>📋 配当表を見る</summary>
@@ -101,6 +170,22 @@ app.innerHTML = `
     <div class="bigwin-text" id="bigwin-text">BIG WIN!</div>
     <div class="bigwin-amount" id="bigwin-amount"></div>
   </div>
+  <div class="modal hidden" id="shop">
+    <div class="modal-card">
+      <h2>🛒 ショップ</h2>
+      <p class="modal-sub">ノルマ達成！ お守りを買ってパワーアップしよう</p>
+      <p class="shop-credits">💰 <b id="shop-credits"></b></p>
+      <div class="shop-items" id="shop-items"></div>
+      <button class="next-round" id="next-round">▶ 次のラウンドへ</button>
+    </div>
+  </div>
+  <div class="modal hidden" id="gameover">
+    <div class="modal-card">
+      <h2 class="gameover-title">💀 GAME OVER</h2>
+      <p class="modal-sub" id="gameover-text"></p>
+      <button class="restart" id="restart">🔄 もう一度挑戦</button>
+    </div>
+  </div>
 `;
 
 const stripEls = REEL_STRIPS.map((_, r) => document.querySelector<HTMLElement>(`#strip-${r}`)!);
@@ -108,7 +193,7 @@ const creditsEl = document.querySelector<HTMLElement>('#credits')!;
 const betEl = document.querySelector<HTMLElement>('#bet')!;
 const messageEl = document.querySelector<HTMLElement>('#message')!;
 const spinBtn = document.querySelector<HTMLButtonElement>('#spin')!;
-const chargeBtn = document.querySelector<HTMLButtonElement>('#charge')!;
+const payBtn = document.querySelector<HTMLButtonElement>('#pay')!;
 const betDownBtn = document.querySelector<HTMLButtonElement>('#bet-down')!;
 const betUpBtn = document.querySelector<HTMLButtonElement>('#bet-up')!;
 const paytableBox = document.querySelector<HTMLDetailsElement>('.paytable-box')!;
@@ -118,6 +203,18 @@ const confettiLayer = document.querySelector<HTMLElement>('#confetti')!;
 const bigwinEl = document.querySelector<HTMLElement>('#bigwin')!;
 const bigwinTextEl = document.querySelector<HTMLElement>('#bigwin-text')!;
 const bigwinAmountEl = document.querySelector<HTMLElement>('#bigwin-amount')!;
+const roundEl = document.querySelector<HTMLElement>('#round')!;
+const normaEl = document.querySelector<HTMLElement>('#norma')!;
+const spinsLeftEl = document.querySelector<HTMLElement>('#spins-left')!;
+const normaFillEl = document.querySelector<HTMLElement>('#norma-fill')!;
+const charmsEl = document.querySelector<HTMLElement>('#charms')!;
+const shopEl = document.querySelector<HTMLElement>('#shop')!;
+const shopCreditsEl = document.querySelector<HTMLElement>('#shop-credits')!;
+const shopItemsEl = document.querySelector<HTMLElement>('#shop-items')!;
+const nextRoundBtn = document.querySelector<HTMLButtonElement>('#next-round')!;
+const gameoverEl = document.querySelector<HTMLElement>('#gameover')!;
+const gameoverTextEl = document.querySelector<HTMLElement>('#gameover-text')!;
+const restartBtn = document.querySelector<HTMLButtonElement>('#restart')!;
 
 // PCでは配当表を常時表示、スマホでは折りたたみ
 const desktopMq = matchMedia('(min-width: 900px)');
@@ -177,37 +274,28 @@ function renderSoundBtn() {
   soundBtn.textContent = sound.muted ? '🔇' : '🔊';
 }
 
-function loadCredits(): number {
-  try {
-    const saved = Number(localStorage.getItem(STORAGE_KEY));
-    if (Number.isFinite(saved) && saved >= 0 && localStorage.getItem(STORAGE_KEY) !== null) {
-      return saved;
-    }
-  } catch {
-    /* localStorage が使えない環境では初期値にフォールバック */
-  }
-  return START_CREDITS;
-}
-
-function saveCredits() {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(credits));
-  } catch {
-    /* 保存できなくてもゲームは続行できる */
-  }
-}
-
 function render() {
   creditsEl.textContent = credits.toLocaleString('ja-JP');
   betEl.textContent = bet.toLocaleString('ja-JP');
-  spinBtn.disabled = spinning || credits < bet;
-  betDownBtn.disabled = spinning || bet <= MIN_BET;
-  betUpBtn.disabled = spinning;
-  const broke = credits < MIN_BET;
-  chargeBtn.classList.toggle('hidden', spinning || !broke);
-  if (!spinning && broke) {
-    setMessage('💸 クレジットがありません。チャージしてください');
-  } else if (!spinning && credits < bet) {
+  roundEl.textContent = String(run.round);
+  normaEl.textContent = norma().toLocaleString('ja-JP');
+  spinsLeftEl.textContent = String(run.spinsLeft);
+  const ratio = Math.min(1, credits / norma());
+  normaFillEl.style.width = `${(ratio * 100).toFixed(1)}%`;
+  normaFillEl.classList.toggle('ok', credits >= norma());
+  charmsEl.innerHTML = run.charms
+    .map((id) => {
+      const c = CHARMS.find((x) => x.id === id);
+      return c ? `<span class="charm-chip" title="${c.name}: ${c.desc}">${c.char}</span>` : '';
+    })
+    .join('');
+
+  const playing = phase === 'playing';
+  spinBtn.disabled = !playing || spinning || credits < bet || run.spinsLeft <= 0;
+  betDownBtn.disabled = !playing || spinning || bet <= MIN_BET;
+  betUpBtn.disabled = !playing || spinning;
+  payBtn.classList.toggle('hidden', !playing || spinning || credits < norma());
+  if (playing && !spinning && credits < bet && credits >= MIN_BET) {
     setMessage(`💦 BET ${bet.toLocaleString('ja-JP')} にはクレジットが足りません`);
   }
 }
@@ -280,15 +368,21 @@ function spinReel(r: number, stop: number, extraSec = 0): Promise<void> {
   });
 }
 
+/** お守りの効果を反映した配当額 */
+function payoutWithMods(w: LineWin | ScatterWin): number {
+  return Math.round(w.payout * (mods.symbolMult[w.symbol] ?? 1) * mods.globalMult);
+}
+
 function spin() {
-  if (spinning) return;
+  if (spinning || phase !== 'playing' || run.spinsLeft <= 0) return;
   if (credits < bet) {
     render();
     return;
   }
   spinning = true;
   credits -= bet;
-  saveCredits();
+  run.spinsLeft--;
+  saveRun();
   clearWinHighlights();
   setMessage('🎲 回転中…');
   sound.spin();
@@ -337,10 +431,8 @@ function spin() {
       pos.forEach((p, r) => setTransform(r, p));
     }
     const wins = evaluateWins(grid, bet);
-    const scatters = evaluateScatters(grid, bet);
-    const total =
-      wins.reduce((sum, w) => sum + w.payout, 0) +
-      scatters.reduce((sum, w) => sum + w.payout, 0);
+    const scatters = evaluateScatters(grid, bet, mods.scatterMinDelta);
+    const total = [...wins, ...scatters].reduce((sum, w) => sum + payoutWithMods(w), 0);
     if (total > 0) {
       credits += total;
       const parts = [
@@ -366,24 +458,113 @@ function spin() {
       } else {
         sound.win();
       }
+    } else if (mods.lossRefund > 0) {
+      const refund = Math.floor(bet * mods.lossRefund);
+      credits += refund;
+      setMessage(`😢 ハズレ… 🐷 +${refund.toLocaleString('ja-JP')} 返ってきた`);
     } else {
       setMessage('😢 ハズレ… もう一回！');
     }
-    saveCredits();
     spinning = false;
+    saveRun();
     render();
+    checkRoundEnd();
   });
 }
 
-spinBtn.addEventListener('click', spin);
-chargeBtn.addEventListener('click', () => {
-  credits = START_CREDITS;
-  saveCredits();
-  setMessage(`💳 ${START_CREDITS} クレジットをチャージしました！`);
+/** スピン後のラウンド判定（期限切れ・破産） */
+function checkRoundEnd() {
+  if (phase !== 'playing') return;
+  if (run.spinsLeft <= 0) {
+    if (credits >= norma()) {
+      clearRound();
+    } else {
+      gameOver(`ラウンド ${run.round} — ノルマ ${norma().toLocaleString('ja-JP')} に届かなかった…`);
+    }
+  } else if (credits < MIN_BET && credits < norma()) {
+    gameOver(`ラウンド ${run.round} — クレジットが尽きた…`);
+  }
+}
+
+/** ノルマを支払ってショップへ */
+function clearRound() {
+  if (phase !== 'playing' || credits < norma()) return;
+  credits -= norma();
+  sound.bigWin();
+  confetti(confettiLayer, 80);
+  run.round++;
+  phase = 'shop';
+  shopOffer = pickShopCharms();
+  renderShop();
+  shopEl.classList.remove('hidden');
+  saveRun();
+  render();
+}
+
+function renderShop() {
+  shopCreditsEl.textContent = credits.toLocaleString('ja-JP');
+  shopItemsEl.innerHTML = shopOffer
+    .map(
+      (c, i) => `
+      <div class="shop-item" data-i="${i}">
+        <div class="shop-char">${c.char}</div>
+        <div class="shop-name">${c.name}</div>
+        <div class="shop-desc">${c.desc}</div>
+        <button class="shop-buy" data-buy="${i}" ${credits < c.price ? 'disabled' : ''}>💰 ${c.price}</button>
+      </div>`,
+    )
+    .join('');
+}
+
+shopItemsEl.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-buy]');
+  if (!btn || btn.disabled) return;
+  const charm = shopOffer[Number(btn.dataset.buy)];
+  if (!charm || credits < charm.price) return;
+  credits -= charm.price;
+  run.charms.push(charm.id);
+  mods = computeMods(run.charms);
+  shopOffer = shopOffer.filter((c) => c !== charm);
+  sound.win();
+  renderShop();
+  saveRun();
   render();
 });
+
+nextRoundBtn.addEventListener('click', () => {
+  phase = 'playing';
+  run.spinsLeft = spinsFor(mods);
+  shopEl.classList.add('hidden');
+  setMessage(`⚔️ ラウンド ${run.round} スタート！ 💀 ノルマ ${norma().toLocaleString('ja-JP')}`);
+  saveRun();
+  render();
+});
+
+function gameOver(text: string) {
+  phase = 'gameover';
+  gameoverTextEl.textContent = text;
+  gameoverEl.classList.remove('hidden');
+  sound.gameOver();
+  render();
+}
+
+restartBtn.addEventListener('click', () => {
+  run = newRunState();
+  credits = run.credits;
+  mods = computeMods(run.charms);
+  bet = MIN_BET;
+  phase = 'playing';
+  gameoverEl.classList.add('hidden');
+  setMessage(`⚔️ ラウンド 1 スタート！ 💀 ノルマ ${norma().toLocaleString('ja-JP')}`);
+  saveRun();
+  render();
+});
+
+payBtn.addEventListener('click', clearRound);
+spinBtn.addEventListener('click', spin);
+
 function changeBet(dir: 1 | -1) {
-  if (spinning) return;
+  if (spinning || phase !== 'playing') return;
   bet = stepBet(bet, dir);
   render();
 }
@@ -413,7 +594,7 @@ betUpBtn.addEventListener('click', () => changeBet(1));
 addHoldRepeat(betDownBtn, () => changeBet(-1));
 addHoldRepeat(betUpBtn, () => changeBet(1));
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
+  if (e.code === 'Space' && phase === 'playing') {
     e.preventDefault();
     spin();
   }
@@ -425,6 +606,8 @@ soundBtn.addEventListener('click', () => {
 
 render();
 renderSoundBtn();
+setMessage(`⚔️ ラウンド ${run.round}！ 💀 ノルマ ${norma().toLocaleString('ja-JP')} を稼いで支払おう`);
+checkRoundEnd();
 
 // 演出プレビュー用の隠しモード（?demo=bigwin で開くとビッグウィン演出を再生）
 if (new URLSearchParams(location.search).get('demo') === 'bigwin') {
