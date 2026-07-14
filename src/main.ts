@@ -24,6 +24,8 @@ import {
 } from './charms';
 import { confetti, countUp, shake } from './fx';
 import { sound } from './sound';
+import { loadStats, recordSpin, simulateOdds } from './stats';
+import { renderCreditChart } from './chart';
 
 const BIG_WIN_MULT = 15; // BET の何倍で BIG WIN 演出にするか
 const MEGA_WIN_MULT = 50;
@@ -49,6 +51,7 @@ let phase: Phase = 'playing';
 let bet = MIN_BET;
 let spinning = false;
 let shopOffer: Charm[] = [];
+const stats = loadStats();
 
 function newRunState(): RunState {
   return { credits: START_CREDITS, round: 1, spinsLeft: 10, charms: [] };
@@ -114,6 +117,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <div class="cabinet">
     <button class="sound-btn" id="sound" aria-label="サウンド切り替え"></button>
+    <button class="stats-btn" id="stats-open" aria-label="統計を見る">📊</button>
     <h1 class="title">🎰 SLOT WEB</h1>
     <div class="game">
       <div class="runbar">
@@ -179,6 +183,31 @@ app.innerHTML = `
       <button class="next-round" id="next-round">▶ 次のラウンドへ</button>
     </div>
   </div>
+  <div class="modal hidden" id="stats">
+    <div class="modal-card stats-card">
+      <button class="modal-close" id="stats-close" aria-label="閉じる">✕</button>
+      <h2>📊 統計</h2>
+      <h3 class="stats-h">💰 クレジット推移（直近 <span id="chart-count"></span> スピン）</h3>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+        <div class="chart-tip hidden" id="chart-tip"></div>
+      </div>
+      <div class="stats-grid">
+        <div class="stats-block">
+          <h3 class="stats-h">🧾 実績（累計）</h3>
+          <table class="stats-table" id="record-table"></table>
+        </div>
+        <div class="stats-block">
+          <h3 class="stats-h">🎲 確率（お守り込み・<span id="odds-trials"></span>回試行）</h3>
+          <table class="stats-table" id="odds-table"></table>
+        </div>
+      </div>
+      <details class="data-table-box">
+        <summary>直近20スピンのデータ表</summary>
+        <table class="stats-table" id="history-table"></table>
+      </details>
+    </div>
+  </div>
   <div class="modal hidden" id="gameover">
     <div class="modal-card">
       <h2 class="gameover-title">💀 GAME OVER</h2>
@@ -212,6 +241,16 @@ const shopEl = document.querySelector<HTMLElement>('#shop')!;
 const shopCreditsEl = document.querySelector<HTMLElement>('#shop-credits')!;
 const shopItemsEl = document.querySelector<HTMLElement>('#shop-items')!;
 const nextRoundBtn = document.querySelector<HTMLButtonElement>('#next-round')!;
+const statsOpenBtn = document.querySelector<HTMLButtonElement>('#stats-open')!;
+const statsEl = document.querySelector<HTMLElement>('#stats')!;
+const statsCloseBtn = document.querySelector<HTMLButtonElement>('#stats-close')!;
+const chartEl = document.querySelector<HTMLCanvasElement>('#chart')!;
+const chartTipEl = document.querySelector<HTMLElement>('#chart-tip')!;
+const chartCountEl = document.querySelector<HTMLElement>('#chart-count')!;
+const recordTableEl = document.querySelector<HTMLElement>('#record-table')!;
+const oddsTableEl = document.querySelector<HTMLElement>('#odds-table')!;
+const oddsTrialsEl = document.querySelector<HTMLElement>('#odds-trials')!;
+const historyTableEl = document.querySelector<HTMLElement>('#history-table')!;
 const gameoverEl = document.querySelector<HTMLElement>('#gameover')!;
 const gameoverTextEl = document.querySelector<HTMLElement>('#gameover-text')!;
 const restartBtn = document.querySelector<HTMLButtonElement>('#restart')!;
@@ -465,6 +504,7 @@ function spin() {
     } else {
       setMessage('😢 ハズレ… もう一回！');
     }
+    recordSpin(stats, { bet, win: total, credits });
     spinning = false;
     saveRun();
     render();
@@ -602,6 +642,65 @@ window.addEventListener('keydown', (e) => {
 soundBtn.addEventListener('click', () => {
   sound.toggle();
   renderSoundBtn();
+});
+
+// ---- 統計モーダル ----
+
+const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
+
+function openStats() {
+  if (spinning) return;
+  statsEl.classList.remove('hidden');
+
+  // クレジット推移グラフ
+  chartCountEl.textContent = String(stats.history.length);
+  renderCreditChart(chartEl, chartTipEl, stats.history);
+
+  // 実績
+  const rtpActual = stats.totalBet > 0 ? stats.totalWin / stats.totalBet : 0;
+  recordTableEl.innerHTML = `
+    <tr><td>総スピン</td><td>${stats.spins.toLocaleString('ja-JP')} 回</td></tr>
+    <tr><td>当たり回数</td><td>${stats.hits.toLocaleString('ja-JP')} 回</td></tr>
+    <tr><td>当たり率（実績）</td><td>${stats.spins > 0 ? pct(stats.hits / stats.spins) : '—'}</td></tr>
+    <tr><td>総BET</td><td>${stats.totalBet.toLocaleString('ja-JP')}</td></tr>
+    <tr><td>総WIN</td><td>${stats.totalWin.toLocaleString('ja-JP')}</td></tr>
+    <tr><td>還元率（実績）</td><td>${stats.totalBet > 0 ? pct(rtpActual) : '—'}</td></tr>
+  `;
+
+  // 理論確率（現在のお守り込みでその場でシミュレーション）
+  const odds = simulateOdds(mods);
+  oddsTrialsEl.textContent = odds.trials.toLocaleString('ja-JP');
+  oddsTableEl.innerHTML = `
+    <tr><td>何かしら当たる</td><td>${pct(odds.anyHit)}</td></tr>
+    <tr><td>理論還元率</td><td>${pct(odds.rtp, 0)}</td></tr>
+    ${(Object.keys(SYMBOLS) as SymbolId[])
+      .map(
+        (s) =>
+          `<tr><td>${SYMBOLS[s].char} ライン当たり</td><td>${pct(odds.lineBySymbol[s])}</td></tr>`,
+      )
+      .join('')}
+    ${Object.entries(odds.scatterBySymbol)
+      .map(([s, p]) => `<tr><td>✨${SYMBOLS[s as SymbolId].char} スキャッター</td><td>${pct(p)}</td></tr>`)
+      .join('')}
+  `;
+
+  // 直近20スピンのデータ表
+  const recent = stats.history.slice(-20);
+  const offset = stats.history.length - recent.length;
+  historyTableEl.innerHTML =
+    `<tr><th>#</th><th>BET</th><th>WIN</th><th>💰</th></tr>` +
+    recent
+      .map(
+        (h, i) =>
+          `<tr><td>${offset + i + 1}</td><td>${h.bet.toLocaleString('ja-JP')}</td><td>${h.win.toLocaleString('ja-JP')}</td><td>${h.credits.toLocaleString('ja-JP')}</td></tr>`,
+      )
+      .join('');
+}
+
+statsOpenBtn.addEventListener('click', openStats);
+statsCloseBtn.addEventListener('click', () => statsEl.classList.add('hidden'));
+statsEl.addEventListener('click', (e) => {
+  if (e.target === statsEl) statsEl.classList.add('hidden');
 });
 
 render();
