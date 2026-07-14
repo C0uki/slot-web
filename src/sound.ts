@@ -67,6 +67,11 @@ export const sound = {
   reelStop(i: number) {
     tone(180 + i * 60, 0, 0.07, 'square', 0.12);
   },
+  /** リーチ成立の瞬間の「ピキーン」 */
+  reachFlash() {
+    tone(1568, 0, 0.09, 'sine', 0.16);
+    tone(2093, 0.06, 0.2, 'sine', 0.13);
+  },
   reach() {
     tone(440, 0, 0.28, 'sawtooth', 0.07);
     tone(466, 0.3, 0.28, 'sawtooth', 0.07);

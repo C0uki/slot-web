@@ -139,6 +139,30 @@ body {
   }
 }
 
+/* リーチ成立の瞬間、2個揃ったマスがピカッと光る */
+.cell.reach-flash {
+  border-radius: 8px;
+  animation: reach-cell-flash 0.9s ease-out;
+}
+
+@keyframes reach-cell-flash {
+  0% {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 0 28px 12px rgba(255, 250, 180, 1);
+    filter: brightness(2.2);
+  }
+  35% {
+    background: rgba(255, 240, 150, 0.75);
+    box-shadow: 0 0 16px 6px rgba(255, 220, 90, 0.8);
+    filter: brightness(1.4);
+  }
+  100% {
+    background: rgba(255, 240, 150, 0);
+    box-shadow: 0 0 0 0 rgba(255, 220, 90, 0);
+    filter: brightness(1);
+  }
+}
+
 /* リーチ（最後のリールが溜まっているとき） */
 .reel.anticipation {
   animation: reach-pulse 0.4s ease-in-out infinite alternate;

@@ -9,7 +9,9 @@ import {
   spinStops,
   evaluateWins,
   evaluateScatters,
+  findReachRuns,
   gridFromStops,
+  type Cell,
 } from './game';
 import { confetti, countUp, shake } from './fx';
 import { sound } from './sound';
@@ -210,6 +212,18 @@ function render() {
   }
 }
 
+/** リーチ（2個揃い）のマスをピカッと光らせる */
+function flashReach(cells: readonly Cell[]) {
+  for (const [reel, row] of cells) {
+    const cell = stripEls[reel].children[pos[reel] + row];
+    if (!cell) continue;
+    cell.classList.remove('reach-flash');
+    void (cell as HTMLElement).offsetWidth; // アニメーションを再トリガー
+    cell.classList.add('reach-flash');
+    setTimeout(() => cell.classList.remove('reach-flash'), 950);
+  }
+}
+
 function clearWinHighlights() {
   document
     .querySelectorAll('.cell.win, .cell.win-scatter')
@@ -303,7 +317,16 @@ function spin() {
 
   Promise.all(
     stops.map((stop, r) =>
-      spinReel(r, stop, anticipate && r === stripEls.length - 1 ? 1.4 : 0),
+      spinReel(r, stop, anticipate && r === stripEls.length - 1 ? 1.4 : 0).then(() => {
+        // このリールが止まった時点で2個揃い(リーチ)になったマスをピカッと光らせる
+        if (r < stripEls.length - 1) {
+          const reaches = findReachRuns(grid, r);
+          if (reaches.length > 0) {
+            for (const reach of reaches) flashReach(reach.cells);
+            sound.reachFlash();
+          }
+        }
+      }),
     ),
   ).then(() => {
     lastReelEl.classList.remove('anticipation');
