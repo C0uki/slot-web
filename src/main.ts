@@ -55,6 +55,7 @@ let mods: Mods = computeMods(run.charms);
 let phase: Phase = 'playing';
 let bet = MIN_BET;
 let spinning = false;
+let autoMode = false;
 let shopOffer: Charm[] = [];
 const stats = loadStats();
 
@@ -189,7 +190,10 @@ app.innerHTML = `
           <button class="bet-btn" id="bet-up" aria-label="ベットを上げる">＋</button>
         </div>
       </div>
-      <button class="spin" id="spin">SPIN</button>
+      <div class="spin-row">
+        <button class="spin" id="spin">SPIN</button>
+        <button class="auto" id="auto">AUTO</button>
+      </div>
       <button class="pay hidden" id="pay">💀 ノルマを支払う</button>
       <button class="charge hidden" id="charge">💳 クレジットを追加</button>
     </div>
@@ -273,6 +277,7 @@ const creditsEl = document.querySelector<HTMLElement>('#credits')!;
 const betEl = document.querySelector<HTMLElement>('#bet')!;
 const messageEl = document.querySelector<HTMLElement>('#message')!;
 const spinBtn = document.querySelector<HTMLButtonElement>('#spin')!;
+const autoBtn = document.querySelector<HTMLButtonElement>('#auto')!;
 const payBtn = document.querySelector<HTMLButtonElement>('#pay')!;
 const chargeBtn = document.querySelector<HTMLButtonElement>('#charge')!;
 const modeToggleEl = document.querySelector<HTMLElement>('#mode-toggle')!;
@@ -400,6 +405,9 @@ function render() {
   const playing = phase === 'playing';
   spinBtn.disabled =
     !playing || spinning || credits < bet || (rogue && run.spinsLeft <= 0);
+  autoBtn.classList.toggle('active', autoMode);
+  autoBtn.textContent = autoMode ? 'AUTO ■' : 'AUTO';
+  autoBtn.disabled = !playing || (!autoMode && spinBtn.disabled);
   betDownBtn.disabled = !playing || spinning || bet <= MIN_BET;
   betUpBtn.disabled = !playing || spinning;
   payBtn.classList.toggle('hidden', !rogue || !playing || spinning || credits < norma());
@@ -477,6 +485,32 @@ function spinReel(r: number, stop: number, extraSec = 0): Promise<void> {
       { once: true },
     );
   });
+}
+
+/** いまスピンを開始できる状態か */
+function canSpin(): boolean {
+  return (
+    phase === 'playing' &&
+    !spinning &&
+    credits >= bet &&
+    (mode !== 'rogue' || run.spinsLeft > 0)
+  );
+}
+
+/** オートモードの切り替え。開始できない状態でONにはしない */
+function setAuto(on: boolean) {
+  autoMode = on && (canSpin() || spinning);
+  render();
+  if (autoMode && canSpin()) spin();
+}
+
+/** スピン解決後、オートモードなら少し置いて次のスピンを予約する */
+function scheduleAutoSpin(delayMs: number) {
+  setTimeout(() => {
+    if (!autoMode || spinning) return;
+    if (canSpin()) spin();
+    else setAuto(false);
+  }, delayMs);
 }
 
 /** お守りの効果を反映した配当額（フリープレイでは素の配当） */
@@ -589,6 +623,10 @@ function spin() {
     persist();
     render();
     if (mode === 'rogue') checkRoundEnd();
+    if (autoMode) {
+      // ビッグウィン演出中は長めに待ってから次を回す
+      scheduleAutoSpin(total / spinBet >= BIG_WIN_MULT ? 2900 : 700);
+    }
   });
 }
 
@@ -609,6 +647,7 @@ function checkRoundEnd() {
 /** ノルマを支払ってショップへ */
 function clearRound() {
   if (phase !== 'playing' || credits < norma()) return;
+  autoMode = false;
   credits -= norma();
   sound.bigWin();
   confetti(confettiLayer, 80);
@@ -661,6 +700,7 @@ nextRoundBtn.addEventListener('click', () => {
 });
 
 function gameOver(text: string) {
+  autoMode = false;
   phase = 'gameover';
   gameoverTextEl.textContent = text;
   gameoverEl.classList.remove('hidden');
@@ -682,6 +722,7 @@ restartBtn.addEventListener('click', () => {
 
 payBtn.addEventListener('click', clearRound);
 spinBtn.addEventListener('click', spin);
+autoBtn.addEventListener('click', () => setAuto(!autoMode));
 
 chargeBtn.addEventListener('click', () => {
   if (mode !== 'free') return;
@@ -694,6 +735,7 @@ chargeBtn.addEventListener('click', () => {
 /** モードを切り替える。それぞれの進行状況は別々に保存され、行き来できる */
 function applyMode(next: Mode) {
   if (mode === next || spinning || phase === 'shop') return;
+  autoMode = false;
   persist();
   mode = next;
   try {
@@ -769,6 +811,8 @@ const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`;
 
 function openStats() {
   if (spinning) return;
+  autoMode = false;
+  render();
   statsEl.classList.remove('hidden');
 
   // クレジット推移グラフ
