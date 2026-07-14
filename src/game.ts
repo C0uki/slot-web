@@ -76,6 +76,38 @@ function buildWinLines(): (readonly Cell[])[] {
   return lines;
 }
 
+export interface ReachRun {
+  cells: readonly Cell[];
+  symbol: SymbolId;
+}
+
+/**
+ * リール stoppedReel が止まった時点の「リーチ」を探す。
+ * ライン上で同じ絵柄がちょうど2個連続し、その連続が stoppedReel で終わっていて、
+ * 次のマス（まだ回転中のリール）で3個以上に伸びる可能性がある箇所を返す。
+ */
+export function findReachRuns(
+  grid: readonly (readonly SymbolId[])[],
+  stoppedReel: number,
+): ReachRun[] {
+  const runs: ReachRun[] = [];
+  for (const line of WIN_LINES) {
+    let i = 0;
+    while (i < line.length) {
+      const [reel0, row0] = line[i];
+      const symbol = grid[reel0][row0];
+      let end = i + 1;
+      while (end < line.length && grid[line[end][0]][line[end][1]] === symbol) end++;
+      const count = end - i;
+      if (count === 2 && line[end - 1][0] === stoppedReel && end < line.length) {
+        runs.push({ cells: line.slice(i, end), symbol });
+      }
+      i = end;
+    }
+  }
+  return runs;
+}
+
 /**
  * スキャッター配当: ラインに揃わなくても、画面(5×5)のどこでも
  * 対象の絵柄が count 個以上あれば BET × payout を払い出す。
